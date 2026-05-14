@@ -1,123 +1,103 @@
 import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'firebase_options.dart';
-import 'screens/auth_gate.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:oyo_app_clean/services/firebase_service.dart';
-import 'screens/home_page.dart';
-import 'screens/support_request_page.dart';
-import 'screens/support_list_page.dart';
+
+import 'firebase_options.dart';
 import 'screens/admin_request_list_page.dart';
+import 'screens/auth_gate.dart';
+import 'screens/home_page.dart';
+import 'screens/register_request_page.dart';
+import 'services/firebase_service.dart';
 
-
-// 🔑 navigatorKey 전역 선언
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
 
-// 📨 FCM 설정
 Future<void> setupFCM() async {
-  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  if (kIsWeb) return;
 
+  final messaging = FirebaseMessaging.instance;
   await messaging.requestPermission();
-  String? token = await messaging.getToken();
-  print('📱 FCM Token: $token');
-
   await FirebaseService().saveFcmTokenToFirestore();
 
-  FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
-    print('🔄 FCM Token refreshed: $newToken');
-    await FirebaseService().saveFcmTokenToFirestore();
+  FirebaseMessaging.instance.onTokenRefresh.listen((_) {
+    FirebaseService().saveFcmTokenToFirestore();
   });
 
-  // 포그라운드 알림 수신
-  FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-    print('📩 [포그라운드] 메시지 수신됨');
-    if (message.notification != null) {
-      print('🔔 알림: ${message.notification!.title} - ${message.notification!.body}');
-    }
-    print('📦 데이터: ${message.data}');
+  FirebaseMessaging.onMessage.listen((message) {
+    final notification = message.notification;
+    if (notification == null) return;
+
+    scaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(
+        content: Text(
+          '${notification.title ?? '알림'}\n${notification.body ?? ''}',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   });
 
-  // 백그라운드에서 알림 클릭 시 라우팅
-  FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-    print('📬 [백그라운드] 알림 클릭');
-    print('📦 데이터: ${message.data}');
+  FirebaseMessaging.onMessageOpenedApp.listen(_handleMessageNavigation);
 
-    final routeTarget = message.data['routeTarget'];
-    switch (routeTarget) {
-      case 'support_request':
-        navigatorKey.currentState?.pushNamed('/support-request');
-        break;
-      case 'admin_request_list':
-        navigatorKey.currentState?.pushNamed('/admin-request-list');
-        break;
-      case 'home':
-        navigatorKey.currentState?.pushNamed('/home');
-        break;
-      case 'support_list':
-        navigatorKey.currentState?.pushNamed('/support-list');
-        break;
-      default:
-        print('❓ 알 수 없는 routeTarget: $routeTarget');
-    }
-  });
+  final initialMessage = await messaging.getInitialMessage();
+  if (initialMessage != null) {
+    scheduleMicrotask(() => _handleMessageNavigation(initialMessage));
+  }
+}
+
+void _handleMessageNavigation(RemoteMessage message) {
+  final routeTarget = message.data['routeTarget'];
+  final navigator = navigatorKey.currentState;
+  if (navigator == null) return;
+
+  switch (routeTarget) {
+    case 'support_request':
+      navigator.pushNamed('/support-request');
+      break;
+    case 'support_list':
+      navigator.pushNamed('/support-list');
+      break;
+    case 'admin_request_list':
+      navigator.pushNamed('/admin-request-list');
+      break;
+    case 'create_request':
+      navigator.pushNamed('/create-request');
+      break;
+    case 'home':
+      navigator.pushNamed('/home');
+      break;
+  }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  runZonedGuarded(() async {
-    await initializeDateFormatting('ko');
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await runZonedGuarded(
+    () async {
+      await initializeDateFormatting('ko');
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
 
-    if (kIsWeb) {
-      await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-    }
+      if (kIsWeb) {
+        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
+        await FirebaseAuth.instance.getRedirectResult();
+      }
 
-    try {
-      final result = await FirebaseAuth.instance.getRedirectResult();
-      print("🌐 redirect 결과: ${result.user}");
-    } catch (e) {
-      print("❌ redirect 처리 중 오류: $e");
-    }
-
-    // 앱 종료 상태에서 알림 클릭 후 실행된 경우 처리
-    RemoteMessage? initialMessage = await FirebaseMessaging.instance.getInitialMessage();
-    if (initialMessage != null) {
-      print('🕓 [앱 종료 상태] 초기 메시지 수신');
-      print('📦 데이터: ${initialMessage.data}');
-
-      final routeTarget = initialMessage.data['routeTarget'];
-      Future.delayed(Duration.zero, () {
-        switch (routeTarget) {
-          case 'support_request':
-            navigatorKey.currentState?.pushNamed('/support-request');
-            break;
-          case 'admin_request_list':
-            navigatorKey.currentState?.pushNamed('/admin-request-list');
-            break;
-          case 'home':
-            navigatorKey.currentState?.pushNamed('/home');
-            break;
-          case 'support_list':
-            navigatorKey.currentState?.pushNamed('/support-list');
-            break;
-        }
-      });
-    }
-
-    if (!kIsWeb) {
       await setupFCM();
-    }
-
-    runApp(const MyApp());
-  }, (error, stackTrace) {
-    print('🔥 Uncaught error: $error');
-    print(stackTrace);
-  });
+      runApp(const MyApp());
+    },
+    (error, stackTrace) {
+      debugPrint('Uncaught app error: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    },
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -125,37 +105,55 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF2C7A7B),
+      surface: const Color(0xFFF7FAF9),
+    );
+
     return MaterialApp(
-      title: 'OYO 앱',
+      title: 'OYO',
+      debugShowCheckedModeBanner: false,
+      navigatorKey: navigatorKey,
+      scaffoldMessengerKey: scaffoldMessengerKey,
       theme: ThemeData(
-        primarySwatch: Colors.teal,
+        useMaterial3: true,
+        colorScheme: colorScheme,
+        scaffoldBackgroundColor: const Color(0xFFF7FAF9),
+        appBarTheme: const AppBarTheme(
+          centerTitle: false,
+          elevation: 0,
+          backgroundColor: Color(0xFFF7FAF9),
+          foregroundColor: Color(0xFF1A202C),
+        ),
+        cardTheme: CardThemeData(
+          elevation: 0,
+          color: Colors.white,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(color: Colors.grey.shade200),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+        ),
       ),
-      navigatorKey: navigatorKey, // ✅ navigatorKey 등록
-      builder: (context, child) {
-        FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-          if (message.notification != null) {
-            final title = message.notification!.title ?? '알림';
-            final body = message.notification!.body ?? '';
-
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text('🔔 $title\n$body'),
-                duration: const Duration(seconds: 4),
-                behavior: SnackBarBehavior.floating,
-              ),
-            );
-          }
-        });
-        return child!;
-      },
       home: const AuthGate(),
-
-      // ✅ 라우팅 설정
       routes: {
-        '/support-request': (_) => const SupportRequestPage(),
-        '/admin-request-list': (_) => const AdminRequestListPage(),
         '/home': (_) => const HomePage(),
-        '/support-list': (_) => const SupportListPage(),
+        '/support-request': (_) => const HomePage(initialTab: 0),
+        '/support-list': (_) => const HomePage(initialTab: 2),
+        '/create-request': (_) => const RegisterRequestPage(),
+        '/admin-request-list': (_) => const AdminRequestListPage(),
       },
     );
   }

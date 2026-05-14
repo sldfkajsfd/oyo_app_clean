@@ -6,18 +6,18 @@ import 'package:flutter/services.dart';
 import '../mvp_shared.dart';
 import '../services/store_onboarding_service.dart';
 
-class SignUpScreen extends StatefulWidget {
-  const SignUpScreen({super.key});
+class StoreSetupScreen extends StatefulWidget {
+  const StoreSetupScreen({super.key, this.existingData});
+
+  final Map<String, dynamic>? existingData;
 
   @override
-  State<SignUpScreen> createState() => _SignUpScreenState();
+  State<StoreSetupScreen> createState() => _StoreSetupScreenState();
 }
 
-class _SignUpScreenState extends State<SignUpScreen> {
+class _StoreSetupScreenState extends State<StoreSetupScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  late final TextEditingController _nameController;
   final _inviteCodeController = TextEditingController();
   final _storeNameController = TextEditingController();
   final _storeService = StoreOnboardingService();
@@ -29,17 +29,30 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool get _isManager => _role == 'admin';
 
   @override
+  void initState() {
+    super.initState();
+    final user = FirebaseAuth.instance.currentUser;
+    final data = widget.existingData ?? {};
+    _nameController = TextEditingController(
+      text: (data['userName'] ?? user?.displayName ?? '').toString(),
+    );
+    final existingRole = data['role']?.toString();
+    _role = isManagerRole(existingRole) ? 'admin' : 'worker';
+  }
+
+  @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
-    _passwordController.dispose();
     _inviteCodeController.dispose();
     _storeNameController.dispose();
     super.dispose();
   }
 
-  Future<void> _signUp() async {
+  Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
     setState(() {
       _isSaving = true;
@@ -47,8 +60,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
     });
 
     try {
+      final userName = _nameController.text.trim();
+      CreatedStore? createdStore;
       DocumentSnapshot<Map<String, dynamic>>? joinedStore;
-      if (!_isManager) {
+
+      if (_isManager) {
+        createdStore = await _storeService.createStore(
+          storeName: _storeNameController.text.trim(),
+          createdBy: user.uid,
+        );
+      } else {
         joinedStore = await _storeService.findStoreByInviteCode(
           _inviteCodeController.text,
         );
@@ -57,42 +78,22 @@ class _SignUpScreenState extends State<SignUpScreen> {
         }
       }
 
-      final credential = await FirebaseAuth.instance
-          .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text.trim(),
-          );
-
-      final user = credential.user;
-      if (user == null) {
-        throw Exception('계정을 만들지 못했어요.');
-      }
-
-      final userName = _nameController.text.trim();
-      await user.updateDisplayName(userName);
-
-      CreatedStore? createdStore;
       final storeId =
-          _isManager
-              ? null
-              : (joinedStore!.data()?['storeId'] ?? joinedStore.id).toString();
-
-      if (_isManager) {
-        createdStore = await _storeService.createStore(
-          storeName: _storeNameController.text.trim(),
-          createdBy: user.uid,
-        );
-      }
+          createdStore?.storeId ??
+          (joinedStore!.data()?['storeId'] ?? joinedStore.id).toString();
 
       await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
         'userName': userName,
         'displayName': userName,
         'email': user.email,
         'role': _role,
-        'storeId': createdStore?.storeId ?? storeId,
-        'createdAt': FieldValue.serverTimestamp(),
+        'storeId': storeId,
         'updatedAt': FieldValue.serverTimestamp(),
-      });
+        'createdAt':
+            widget.existingData == null
+                ? FieldValue.serverTimestamp()
+                : widget.existingData!['createdAt'],
+      }, SetOptions(merge: true));
 
       if (!mounted) return;
       if (createdStore != null) {
@@ -102,15 +103,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('매장에 참여했어요.')));
       }
-
-      if (mounted) Navigator.pop(context);
     } catch (error) {
       if (!mounted) return;
       setState(() {
         _error = cleanError(error);
       });
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) {
+        setState(() => _isSaving = false);
+      }
     }
   }
 
@@ -120,12 +121,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
       barrierDismissible: false,
       builder:
           (context) => AlertDialog(
-            title: const Text('매장이 만들어졌어요'),
+            title: const Text('초대 코드가 준비됐어요'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('${store.storeName} 직원에게 아래 초대 코드를 공유해 주세요.'),
+                Text('${store.storeName} 직원에게 이 코드를 보내주세요.'),
                 const SizedBox(height: 16),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -171,9 +172,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('계정 만들기')),
+      appBar: AppBar(title: const Text('매장 연결')),
       body: SafeArea(
         child: Form(
           key: _formKey,
@@ -181,19 +181,19 @@ class _SignUpScreenState extends State<SignUpScreen> {
             padding: const EdgeInsets.all(24),
             children: [
               Text(
-                '3분 안에 매장 연결',
-                style: theme.textTheme.headlineSmall?.copyWith(
+                _isManager ? '매장을 만들어 주세요' : '초대 코드로 참여해 주세요',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.w800,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 _isManager
-                    ? '매장 이름만 입력하면 초대 코드가 자동으로 만들어져요.'
-                    : '매니저에게 받은 초대 코드로 바로 참여해요.',
+                    ? '매장 이름만 입력하면 직원용 초대 코드가 만들어져요.'
+                    : '매니저에게 받은 코드만 입력하면 매장에 연결돼요.',
                 style: TextStyle(color: Colors.grey.shade700),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(labelText: '이름'),
@@ -203,29 +203,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             ? '이름을 입력해 주세요.'
                             : null,
               ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: '이메일'),
-                validator:
-                    (value) =>
-                        value == null || value.trim().isEmpty
-                            ? '이메일을 입력해 주세요.'
-                            : null,
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: '비밀번호'),
-                validator:
-                    (value) =>
-                        value == null || value.length < 6
-                            ? '6자 이상 입력해 주세요.'
-                            : null,
-              ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 16),
               SegmentedButton<String>(
                 segments: const [
                   ButtonSegment(
@@ -244,7 +222,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   setState(() => _role = selected.first);
                 },
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               if (_isManager)
                 TextFormField(
                   controller: _storeNameController,
@@ -265,7 +243,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   decoration: const InputDecoration(
                     labelText: '초대 코드',
                     hintText: '예: 7KQ2MA',
-                    helperText: '매니저가 만든 6자리 코드를 입력해요.',
+                    helperText: '매니저가 공유한 6자리 코드를 입력해요.',
                   ),
                   onChanged: (value) {
                     final normalized = _storeService.normalizeInviteCode(value);
@@ -288,10 +266,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 const SizedBox(height: 16),
                 Text(_error, style: const TextStyle(color: Colors.red)),
               ],
-              const SizedBox(height: 24),
+              const SizedBox(height: 28),
               FilledButton(
-                onPressed: _isSaving ? null : _signUp,
-                child: Text(_isSaving ? '저장 중...' : '가입하기'),
+                onPressed: _isSaving ? null : _save,
+                child: Text(_isSaving ? '저장 중...' : '시작하기'),
               ),
             ],
           ),

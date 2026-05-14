@@ -1,11 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_messaging/firebase_messaging.dart'; // 🔥 추가
 
 import '../services/auth_service.dart';
-import 'admin_main_navigation_page.dart';
-import 'main_navigation_page.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,178 +11,152 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  String error = '';
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  String _error = '';
+  bool _isLoading = false;
 
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
+    final success = await AuthService.signInWithEmail(
+      _emailController.text.trim(),
+      _passwordController.text.trim(),
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+      _error = success ? '' : '이메일 또는 비밀번호를 다시 확인해 주세요.';
+    });
+  }
+
+  Future<void> _loginWithGoogle() async {
+    setState(() {
+      _isLoading = true;
+      _error = '';
+    });
+
+    final user = await AuthService.signInWithGoogle();
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+      _error = user == null ? '구글 로그인을 완료하지 못했어요.' : '';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: Colors.white,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32.0),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const SizedBox(height: 80),
-                  const Text(
-                    'oyo',
-                    style: TextStyle(fontSize: 96, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'on your own',
-                    style: TextStyle(fontSize: 18, color: Colors.black87),
-                  ),
-                  const SizedBox(height: 120),
-                  const Text(
-                    'Manage your time and money,\non your own',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // 이메일 입력
-                  TextField(
-                    controller: emailController,
-                    decoration: const InputDecoration(labelText: '이메일'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 비밀번호 입력
-                  TextField(
-                    controller: passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: '비밀번호'),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // 이메일 로그인 버튼
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final success = await AuthService.signInWithEmail(
-                          emailController.text.trim(),
-                          passwordController.text.trim(),
-                        );
-                        if (!success) {
-                          setState(() {
-                            error = '로그인 실패! 이메일 또는 비밀번호 확인';
-                          });
-                        } else {
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user != null) {
-                            await handleLoginAndRedirect(context, user);
-                          }
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.grey[300],
-                        foregroundColor: Colors.black87,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      child: const Text('이메일로 시작하기'),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-
-                  /*
-                  // 구글 로그인 (나중에 열기)
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      onPressed: () async {
-                        final user = await AuthService.signInWithGoogle();
-                        if (user != null) {
-                          await handleLoginAndRedirect(context, user);
-                        }
-                      },
-                      icon: Image.asset('assets/google_logo.png', height: 20),
-                      label: const Text('구글로 시작하기'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black87,
-                        side: const BorderSide(color: Colors.grey),
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+            padding: const EdgeInsets.all(28),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'OYO',
+                      style: theme.textTheme.displayMedium?.copyWith(
+                        fontWeight: FontWeight.w900,
+                        color: theme.colorScheme.primary,
                       ),
                     ),
-                  ),
-                  */
-
-                  const SizedBox(height: 12),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SignUpScreen()),
-                      );
-                    },
-                    child: const Text('아직 계정이 없으신가요? 회원가입'),
-                  ),
-
-                  if (error.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 16.0),
-                      child: Text(error, style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 8),
+                    Text(
+                      '대타 요청을 덜 부담스럽게',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: Colors.grey.shade700,
+                      ),
                     ),
-
-                  const SizedBox(height: 32),
-                  const Text(
-                    '로그인하시면 서비스 이용약관 및 개인정보 처리 방침에 동의하게 됩니다.',
-                    style: TextStyle(fontSize: 11, color: Colors.grey),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
+                    const SizedBox(height: 36),
+                    TextFormField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: const InputDecoration(labelText: '이메일'),
+                      validator:
+                          (value) =>
+                              value == null || value.trim().isEmpty
+                                  ? '이메일을 입력해 주세요.'
+                                  : null,
+                    ),
+                    const SizedBox(height: 14),
+                    TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      autofillHints: const [AutofillHints.password],
+                      decoration: const InputDecoration(labelText: '비밀번호'),
+                      validator:
+                          (value) =>
+                              value == null || value.isEmpty
+                                  ? '비밀번호를 입력해 주세요.'
+                                  : null,
+                    ),
+                    if (_error.isNotEmpty) ...[
+                      const SizedBox(height: 14),
+                      Text(_error, style: const TextStyle(color: Colors.red)),
+                    ],
+                    const SizedBox(height: 22),
+                    FilledButton(
+                      onPressed: _isLoading ? null : _login,
+                      child: Text(_isLoading ? '로그인 중...' : '로그인'),
+                    ),
+                    const SizedBox(height: 10),
+                    OutlinedButton(
+                      onPressed: _isLoading ? null : _loginWithGoogle,
+                      child: const Text('구글로 계속하기'),
+                    ),
+                    const SizedBox(height: 18),
+                    TextButton(
+                      onPressed:
+                          _isLoading
+                              ? null
+                              : () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const SignUpScreen(),
+                                  ),
+                                );
+                              },
+                      child: const Text('처음이라면 계정 만들기'),
+                    ),
+                    const SizedBox(height: 28),
+                    Text(
+                      '매장 안에서만 요청이 공유돼요. 직접 부탁하는 부담 없이 필요한 일정만 올려보세요.',
+                      textAlign: TextAlign.center,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: Colors.grey.shade600,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
         ),
       ),
     );
-  }
-
-  Future<void> handleLoginAndRedirect(BuildContext context, User user) async {
-    final uid = user.uid;
-    final userDocRef = FirebaseFirestore.instance.collection('users').doc(uid);
-
-    final doc = await userDocRef.get();
-    if (!doc.exists) {
-      await userDocRef.set({
-        'email': user.email,
-        'role': 'staff',
-        'createdAt': FieldValue.serverTimestamp(),
-      });
-    }
-
-    // ✅ fcmToken 업데이트 추가
-    final fcmToken = await FirebaseMessaging.instance.getToken();
-    await userDocRef.update({'fcmToken': fcmToken});
-
-    final role = (await userDocRef.get()).data()?['role'];
-
-    if (role == 'admin') {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const AdminMainNavigationPage()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainNavigationPage()),
-      );
-    }
   }
 }
