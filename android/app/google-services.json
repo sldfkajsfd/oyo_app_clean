@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "180969837015",
+    "project_id": "oyo-app-abb71",
+    "storage_bucket": "oyo-app-abb71.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:180969837015:android:5887b80315a46bffe5fb92",
+        "android_client_info": {
+          "package_name": "com.example.demo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7cs7RzUhNlpcvxGDp-lGR-4bxywGDbqI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:180969837015:android:40370f2f9f23fff5e5fb92",
+        "android_client_info": {
+          "package_name": "com.example.oyo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7cs7RzUhNlpcvxGDp-lGR-4bxywGDbqI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
